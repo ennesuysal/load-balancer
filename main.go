@@ -37,7 +37,7 @@ func handleConn(con net.Conn, addr string) error{
 
 
 func (b* backend)selector() string{
-	arrLength := len(serverPool)
+	arrLength := len(b.serverPool)
 
 	b.counter = b.counter % arrLength
 	selection := b.counter
