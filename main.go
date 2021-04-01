@@ -17,10 +17,6 @@ type backend struct {
 
 var b backend
 
-var serverPool = []string{
-	"localhost:8001", "localhost:8002",
-}
-
 func bridge(wc io.WriteCloser, rd io.Reader){
 	defer wc.Close()
 	io.Copy(wc, rd)
