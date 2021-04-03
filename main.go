@@ -2,27 +2,29 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"io"
 	"log"
 	"net"
-	"flag"
 	"os"
 	"strings"
 )
 
 type backend struct {
 	serverPool []string
-	counter int
+	alive      []int
+	counter    int
 }
 
 var b backend
+var stack_counter int
 
-func bridge(wc io.WriteCloser, rd io.Reader){
+func bridge(wc io.WriteCloser, rd io.Reader) {
 	defer wc.Close()
 	io.Copy(wc, rd)
 }
 
-func handleConn(con net.Conn, addr string) error{
+func handleConn(con net.Conn, addr string) error {
 	be, err := net.Dial("tcp", addr)
 
 	if err != nil {
@@ -34,24 +36,35 @@ func handleConn(con net.Conn, addr string) error{
 	return nil
 }
 
-
-
-func (b* backend)selector() string{
+func (b *backend) selector() string {
+	if stack_counter >= len(b.serverPool) {
+		log.Fatal("All servers are crashed! Exiting...")
+		os.Exit(2)
+	}
 	arrLength := len(b.serverPool)
 
 	b.counter = b.counter % arrLength
 	selection := b.counter
 	b.counter++
+	selected := b.serverPool[selection]
 
-	return b.serverPool[selection]
+	if b.alive[selection] == 0 {
+		stack_counter++
+		selected = b.selector()
+	}
+
+	stack_counter = 0
+
+	return selected
 }
 
 var (
-	bind = flag.String("bind", "", "The address to listen")
-	servers = flag.String("backends", "", "backend addresses(must be separated by commas e.g '-backends 1.1.1.1, 2.2.2.2')")
+	bind    = flag.String("bind", "", "The address to listen")
+	servers = flag.String("backends", "", "backend addresses(must be separated by commas e.g '-backends 1.1.1.1:8080,2.2.2.2:8081')")
 )
 
-func main(){
+func main() {
+	stack_counter = 0
 	flag.Parse()
 	if *bind == "" {
 		log.Fatal("You must enter a valid address.")
@@ -65,6 +78,13 @@ func main(){
 
 	b = backend{counter: 0, serverPool: strings.Split(*servers, ",")}
 
+	b.alive = make([]int, len(b.serverPool))
+
+	for i := 0; i < len(b.alive); i++ {
+		b.alive[i] = 1
+	}
+
+	go b.healthCheck()
 
 	ln, err := net.Listen("tcp", *bind)
 	defer ln.Close()
@@ -80,7 +100,7 @@ func main(){
 			log.Fatal(err)
 			os.Exit(1)
 		}
-		go func(){
+		go func() {
 			err := handleConn(conn, b.selector())
 			if err != nil {
 				log.Fatal(err)
